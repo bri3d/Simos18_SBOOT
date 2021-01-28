@@ -35,9 +35,11 @@ The recovery shell now sets up ISO-TP framing and expects the following messages
 ```
 TESTER -> EXPECTED REPLY
 
+7D 41 43 57 -> A0, sets the "current state" to 0xA which seems to exit the command shell.
+7D 4E 42 30 ("NB0") -> A0, just a part number check? Doesn't seem to alter any other state.
+
 6B -> A0 02. This is the SBOOT version of TesterPresent, works regardless of state.
-7D 41 53 57 -> A0 . This is a password of sorts, stored at 80006400. Get it wrong and you'll reboot out of SBOOT. 
-30 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? (???) -> A0 . This one is weird. It checks that byte 3 is equal to a value at 8000081C, but there's nothing there... It then sets two bytes at D0000010 to the first two bytes of the payload. Not sure if this is for engineering ECUs or what.
+30 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? (???) -> A0 . This one is weird. It checks that byte 3 is equal to a value at 8000081C, but there's nothing there... It then sets two bytes at D0000010 to the first two bytes of the payload. Not sure if this is for engineering ECUs or what. All 0s seems to work.
 54 -> A0 XX XX XX XX 00 01 36 followed by 0x100 bytes of RSA public key material. This seems to dump the public key with identifier "0x0136" that will be used to verify the BSL. XX XX XX XX is the addr of pubkeykey in ECU memory for whatever reason. I suppose this is useful if a factory tool has a large keychain for different ECUs and needs to know what it's working with.
 65 ??x100 -> A0 RSA signature material sent back towards the ECU. It can be presumed that this _should_ be the RSA signature for the bootloader. Not sure the extent to which it is validated at this stage just yet.
 78 AA AA AA AA XX ... -> Set Address -> Value. Value is a varargs length based on the framing length from CAN. AA AA AA AA is a bounds-checked address between B0010000 and B0015000. This can be used any number of times to set up the BSL in RAM.
@@ -68,6 +70,4 @@ If the "Recovery" break-in doesn't occur at this stage, first a check is made ag
 If no "CBOOT_temp" awaits promotion, the Valid flags (H$B) of the "main" CBOOT are checked (notably, not its CRC), a strange set of commands is sent to the Flash controller, and then CBOOT is executed.
 
 If no Valid flags are set for "main" CBOOT, the same recovery shell is entered.
-
-
 

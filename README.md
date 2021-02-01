@@ -40,8 +40,8 @@ TESTER -> EXPECTED REPLY
 
 6B -> A0 02. This is the SBOOT version of TesterPresent, works regardless of state.
 30 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? (???) -> A0 . This one is weird. It checks that byte 3 is equal to a value at 8000081C, but there's nothing there... It then sets two bytes at D0000010 to the first two bytes of the payload. Not sure if this is for engineering ECUs or what. All 0s seems to work.
-54 -> A0 XX XX XX XX 00 01 36 followed by 0x100 bytes of RSA public key material. This seems to dump the public key with identifier "0x0136" that will be used to verify the BSL. XX XX XX XX is the addr of pubkeykey in ECU memory for whatever reason. I suppose this is useful if a factory tool has a large keychain for different ECUs and needs to know what it's working with.
-65 ??x100 -> A0 RSA signature material sent back towards the ECU. It can be presumed that this _should_ be the RSA signature for the bootloader. Not sure the extent to which it is validated at this stage just yet.
+54 -> A0 XX XX XX XX 00 01 36 followed by 0x100 bytes of Seed material. This seems to configure the public key with identifier "0x0136" that will be used to verify the BSL, then uses the Mersenne Twister seeded with the system timer to generate a Seed using this key. XX XX XX XX is the addr of pubkeykey in ECU memory for whatever reason. I suppose this is useful if a factory tool has a large keychain for different ECUs and needs to know what it's working with.
+65 ??x100 -> A0 Key Response. Some yet-unknown transformation is applied to the Seed from the previous step, and then sent back in and verified.
 78 AA AA AA AA XX ... -> Set Address -> Value. Value is a varargs length based on the framing length from CAN. AA AA AA AA is a bounds-checked address between B0010000 and B0015000. This can be used any number of times to set up the BSL in RAM.
 ```
 

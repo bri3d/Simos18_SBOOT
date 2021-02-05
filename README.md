@@ -40,8 +40,8 @@ TESTER -> EXPECTED REPLY
 
 6B -> A0 02. This is the SBOOT version of TesterPresent, works regardless of state.
 30 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? (???) -> A0 . This one is weird. It checks that byte 3 is equal to a value at 8000081C, but there's nothing there... It then sets two bytes at D0000010 to the first two bytes of the payload. Not sure if this is for engineering ECUs or what. All 0s seems to work.
-54 -> A0 XX XX XX XX 00 01 36 followed by 0x100 bytes of Seed material. This seems to configure the public key with identifier "0x0136" that will be used to verify the BSL, then uses the Mersenne Twister seeded with the system timer to generate a Seed using this key. XX XX XX XX is the addr of pubkeykey in ECU memory for whatever reason. I suppose this is useful if a factory tool has a large keychain for different ECUs and needs to know what it's working with.
-65 ??x100 -> A0 Key Response. Some yet-unknown transformation is applied to the Seed from the previous step, and then sent back in and verified.
+54 -> A0 XX XX XX XX 00 01 36 followed by 0x100 bytes of Seed material. This seems to configure the public key with identifier "0x0136" that will be used to verify the BSL, then uses the Mersenne Twister seeded with the system timer, encrypts the generated data using the RSA Public Key 0x136, then sends the encrypted data to the tester. XX XX XX XX is the addr of pubkeykey in ECU memory for whatever reason. I suppose this is useful if a factory tool has a large keychain for different ECUs and needs to know what it's working with.
+65 ??x100 -> A0 Key Response. The ECU expects the tester to be able to decrypt the random data encrypted using the public key and send it back. This, of course, requires the corresponding private key. 
 78 AA AA AA AA XX ... -> Set Address -> Value. Value is a varargs length based on the framing length from CAN. AA AA AA AA is a bounds-checked address between B0010000 and B0015000. This can be used any number of times to set up the BSL in RAM.
 ```
 
@@ -62,6 +62,8 @@ One final command is available:
 There is an exploit in this mechanism which allows exfiltration of the boot passwords stored at `8001420c`. I am currently researching how this works - by my reading of the SBOOT disassembly. Since the CRC header is only bounds-checked in one direction, my suspicion is that there is a sign-extension / overflow issue in the CRC length calculation or a timing exploit where the CRC base address can be set to 8001420c and the ECU can be rebooted before it bus faults while the checksum value still resides in RAM at `d0010778`.
 
 There may also be an exploit in the RSA validation itself, but I believe this to be less likely as the RSA validation methods are stored in OTP and are additional used for all validation of CBOOT-provided reflashes, so an exploit here would be usable generally.
+
+I am currently trying to figure out whether any earlier stages of the process are exploitable, or whether there is an issue in the seed/key validation that I have not yet found - because at least in theory, the seed/key validation seems quite secure as encrypting the random data with the public key and expecting it back decrypted should require knowledge of the private key.
 
 # Happy Path
 

@@ -13,9 +13,9 @@ The SBOOT is the first part of the ECU's trust chain after the CPU mask ROM. It 
 
 Startup pretty much happens in this order, as well. First, SBOOT sets up a large number of peripheral registers using initliazation data hardcoded in Flash. Next, SBOOT initalizes the main clocks, importantly, setting the PLL base frequency for timers to 8.75Mhz.
 
-Next, SBOOT sets up CAN message handlers, using the standard UDS channel IDs 0x7E0 and 0x7E8, and then sets up the "GPTA" comparator peripheral on the Tricore to measure two signals for "break-in." The two signals are measured as follows:
+# Recovery Shell Entry Details (GPT/PWM/"PW")
 
-# Recovery Shell Details (GPT/PWM/"PW")
+Next, SBOOT sets up CAN message handlers, using the standard UDS channel IDs 0x7E0 and 0x7E8, and then sets up the "GPTA" comparator peripheral on the Tricore to measure two signals for "break-in." The two signals are measured as follows:
 
 Signal 1 triggers a reset of a GPTA timer at each rising edge.
 Signal 2 triggers an interrupt at each rising edge.
@@ -29,6 +29,15 @@ These two measurements are checked to be < 0x80A and < 0xAAA, respectively. Give
 Please see the included Python script for a way to set these two frequencies up using pigpiod's WavePWM on the Raspberry Pi. Please note that the outputs from the Pi need to be level shifted to be registered by the Tricore in Simos18.
 
 If the PWM signals match, two CAN messages are checked. First, a message `59 45` (`80002b70`). If this message is present, `0xA0` is returned. Next, a message `6B` is expected (`80004a48`), to which `0xA0` is again returned. If these conditions are met, SBOOT will jump into the "recovery shell" awaiting setup of a bootstrap loader.
+
+# Recovery Shell Tasks
+
+The recovery shell now runs four tasks.
+
+* The first task is a command REPL based on a state machine, documented below.
+* The second task is the ISO-TP processing logic for that command REPL.
+* The third task runs from RAM at d001fd80 and appears to bit-bang data out through a GPIO port (?!?!).
+* The fourth task just counts up.
 
 The recovery shell now sets up ISO-TP framing and expects the following messages:
 
@@ -59,11 +68,11 @@ One final command is available:
 
 `79 -> Validate and execute BSL.` This first copies the CRC header into a RAM structure for CRC validation. Next, it iterates through the CRC checksum, 0x100 bytes at a time, and then checks it against the stored value. Finally, it generates the SHAsum of the bootloader, checks it against the sum embedded in the RSA signature, and if everything matches, Flash is unlocked and then the entry point is executed in RAM.
 
-There is an exploit in this mechanism which allows exfiltration of the boot passwords stored at `8001420c`. I am currently researching how this works - by my reading of the SBOOT disassembly. Since the CRC header is only bounds-checked in one direction, my suspicion is that there is a sign-extension / overflow issue in the CRC length calculation or a timing exploit where the CRC base address can be set to 8001420c and the ECU can be rebooted before it bus faults while the checksum value still resides in RAM at `d0010778`.
+# Recovery Exploits
 
-There may also be an exploit in the RSA validation itself, but I believe this to be less likely as the RSA validation methods are stored in OTP and are additional used for all validation of CBOOT-provided reflashes, so an exploit here would be usable generally.
+It is known that something in this recovery process is exploitable to recover the boot passwords from inside of Flash. The ISO-TP command shell seems secure in principal, and a cursory examination of the methods did not reveal any obvious bugs. The attack surface is quite small as only a few commands allow data to be sent back to them.
 
-I am currently trying to figure out whether any earlier stages of the process are exploitable, or whether there is an issue in the seed/key validation that I have not yet found - because at least in theory, the seed/key validation seems quite secure as encrypting the random data with the public key and expecting it back decrypted should require knowledge of the private key.
+The extra task which is running in RAM seems quite interesting and is my new target for investigation. It seems to dump the value of arbitrary addresses into serial data on a GPIO...
 
 # Happy Path
 

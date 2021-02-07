@@ -34,9 +34,9 @@ If the PWM signals match, two CAN messages are checked. First, a message `59 45`
 
 The recovery shell now runs four tasks.
 
-* The first task is a command REPL based on a state machine, documented below.
-* The second task is the ISO-TP processing logic for that command REPL.
-* The third task runs from RAM at d001fd80 and appears to bit-bang data out through a GPIO port (?!?!).
+* The first task is an ISO-TP command REPL based on a state machine, documented below.
+* The second task appears to be part of the ISO-TP message pump logic for that command REPL. It also handles soft rebooting the ECU with reason code `0x200` if the REPL's state machine is set to 10dec (0xA), which occurs if a specific password is sent to the "7D" command. I am not yet sure if `0x200` as the restart reason is handled in a special way.
+* The third task runs from RAM at d001fd80 . It services the Tricore Watchdog Timer and bit-bangs a fixed message out to the Port3 GPIO. It's not yet certain what the purpose of the bit-bang is - perhaps it is servicing an external watchdog peripheral, or is for debugging. More investigation is required. This is definitely a side-channel through which information can be exfiltrated (as the watchdog is serviced outside of the usual timer schedule before certain flash tasks), but probably isn't the source of an existing exploit.
 * The fourth task just counts up.
 
 The recovery shell now sets up ISO-TP framing and expects the following messages:
@@ -48,7 +48,7 @@ TESTER -> EXPECTED REPLY
 7D 4E 42 30 ("NB0") -> A0, just a part number check? Doesn't seem to alter any other state.
 
 6B -> A0 02. This is the SBOOT version of TesterPresent, works regardless of state.
-30 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? (???) -> A0 . This one is weird. It checks that byte 3 is equal to a value at 8000081C, but there's nothing there... It then sets two bytes at D0000010 to the first two bytes of the payload. Not sure if this is for engineering ECUs or what. All 0s seems to work.
+30 ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? ?? (???) -> A0 . This one is weird. It checks that int 3 is equal to a value at 8000081C, but there's nothing there... It then sets two words at D0000010 to the first two words of the payload. All 0s seems to work. This command is required to esclate the state from 0 to 2 to enable the 54 command to be accessed.
 54 -> A0 XX XX XX XX 00 01 36 followed by 0x100 bytes of Seed material. This seems to configure the public key with identifier "0x0136" that will be used to verify the BSL, then uses the Mersenne Twister seeded with the system timer, encrypts the generated data using the RSA Public Key 0x136, then sends the encrypted data to the tester. XX XX XX XX is the addr of pubkeykey in ECU memory for whatever reason. I suppose this is useful if a factory tool has a large keychain for different ECUs and needs to know what it's working with.
 65 ??x100 -> A0 Key Response. The ECU expects the tester to be able to decrypt the random data encrypted using the public key and send it back. This, of course, requires the corresponding private key. 
 78 AA AA AA AA XX ... -> Set Address -> Value. Value is a varargs length based on the framing length from CAN. AA AA AA AA is a bounds-checked address between B0010000 and B0015000. This can be used any number of times to set up the BSL in RAM.
@@ -70,9 +70,13 @@ One final command is available:
 
 # Recovery Exploits
 
-It is known that something in this recovery process is exploitable to recover the boot passwords from inside of Flash. The ISO-TP command shell seems secure in principal, and a cursory examination of the methods did not reveal any obvious bugs. The attack surface is quite small as only a few commands allow data to be sent back to them.
+It is known that something in this recovery process is exploitable to recover the boot passwords from inside of Flash. The ISO-TP command shell seems secure in principle, and a cursory examination of the methods did not reveal any obvious bugs. The attack surface is quite small as only a few commands allow data to be sent back to them.
 
-The extra task which is running in RAM seems quite interesting and is my new target for investigation. It seems to dump the value of arbitrary addresses into serial data on a GPIO...
+A few pieces are interesting so far:
+
+* The external watchdog output can definitely exfiltrate information about the Flash process, but I'm not sure what pin it's mapped to yet.
+* The CRC bounds checking on the block sent in to the BSL verification process is weak, but first we have to reach this elevated state, which requires passing the 54/65 Seed/Key process first.
+* The `30 xx xx xx` handler writes data at `D0000010-D0000018` , which is later used somewhere in CBOOT. There seem to be two magic values possible here: `66778899` and `4b747352`. It as yet unknown what beneficial value these may have, if any.
 
 # Happy Path
 

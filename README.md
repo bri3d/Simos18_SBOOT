@@ -36,7 +36,7 @@ The recovery shell now runs four tasks.
 
 * The first task is an ISO-TP command REPL based on a state machine, documented below.
 * The second task appears to be part of the ISO-TP message pump logic for that command REPL. It also handles soft rebooting the ECU with reason code `0x200` if the REPL's state machine is set to 10dec (0xA), which occurs if a specific password is sent to the "7D" command. I am not yet sure if `0x200` as the restart reason is handled in a special way.
-* The third task runs from RAM at d001fd80 . It services the Tricore Watchdog Timer and bit-bangs a fixed message out to the Port3 GPIO. It's not yet certain what the purpose of the bit-bang is - perhaps it is servicing an external watchdog peripheral, or is for debugging. More investigation is required. This is definitely a side-channel through which information can be exfiltrated (as the watchdog is serviced outside of the usual timer schedule before certain flash tasks), but probably isn't the source of an existing exploit.
+* The third task runs from RAM at d001fd80 . It services the Tricore Watchdog Timer and bit-bangs a fixed message out to the Port1 GPIO. It's not yet certain what the purpose of the bit-bang is - perhaps it is servicing an external watchdog peripheral, or is for debugging. More investigation is required. This is definitely a side-channel through which information can be exfiltrated (as the watchdog is serviced outside of the usual timer schedule before certain flash tasks), but probably isn't the source of an existing exploit.
 * The fourth task just counts up.
 
 The recovery shell now sets up ISO-TP framing and expects the following messages:
@@ -77,6 +77,10 @@ A few pieces are interesting so far:
 * The external watchdog output can definitely exfiltrate information about the Flash process, but I'm not sure what pin it's mapped to yet.
 * The CRC bounds checking on the block sent in to the BSL verification process is weak, but first we have to reach this elevated state, which requires passing the 54/65 Seed/Key process first.
 * The `30 xx xx xx` handler writes data at `D0000010-D0000018` , which is later used somewhere in CBOOT. There seem to be two magic values possible here: `66778899` and `4b747352`. It as yet unknown what beneficial value these may have, if any.
+
+We also know that the Mersenne Twister seed number is deterministic, at least in theory, since no entropy is correctly introduced: it is seeded off of the system timer only, which is not an entropy source since with the same inputs, the CPU should produce the same outputs. Furthermore the seed is passed through `| 1` for some unexpained reason, so it is an even more poor source of entropy. Since CAN messages are buffered and processed in a loop pumped using the same timer, with some plausibly tight timing it should be quite possible to "hit" the same Mersenne Twister seed number (or use one dumped from RAM using BSL from a past iteration to guess what the number may be). Because the random data which is encrypted and passed back is not dynamically salted at all, it should be possible to pass back the desired data and pass the seed/key algorithm. 
+
+My current exploit development centers around finding some fixed bytes to try to use for the key, then using the poor bounds-checking on the CRC to begin a checksum process against the boot passwords as stored in Flash. By then quickly resetting the CPU into BSL, before the process has a chance to run too many iterations, a reasonably small amount of data should be processed before we are able to inspect the state of the checksum routine. And by sliding the start of the CRC, it should be possible to determine the influence of each set of bytes on the CRC and to back-calculate the bytes in question, revealing the boot passwords.
 
 # Happy Path
 

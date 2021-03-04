@@ -165,53 +165,69 @@ static inline uint32_t bswap32(uint32_t x)
 
 int main(int argc, char *argv[])
 {
-  int j;
-
-  uint32_t seed = atoi(argv[1]);
-  int done = 0;
-  uint32_t rand_data[64];
+  uint32_t seed = strtol(argv[1], NULL, 16);
+  uint64_t match = strtoll(argv[2], NULL, 16);
 
   // RSA Public Key 0x136 from Supplier Bootloader binary
-  BN_CTX *ctx = BN_CTX_new();
   BIGNUM *n = BN_new();
   BN_hex2bn(&n, "de5a5615fdda3b76b4ecd8754228885e7bf11fdd6c8c18ac24230f7f770006cfe60465384e6a5ab4daa3009abc65bff2abb1da1428ce7a925366a14833dcd18183bad61b2c66f0d8b9c4c90bf27fe9d1c55bf2830306a13d4559df60783f5809547ffd364dbccea7a7c2fc32a0357ceba3e932abcac6bd6398894a1a22f63bdc45b5da8b3c4e80f8c097ca7ffd18ff6c78c81e94c016c080ee6c5322e1aeb59d2123dce1e4dd20d0f1cdb017326b4fd813c060e8d2acd62e703341784dca667632233de57db820f149964b3f4f0c785c39e2534a7ae36fd115b9f06457822f8a9b7ce7533777a4fb03610d6b4018ab332be4e7ad2f4ac193040e5a037417bc53");
   BIGNUM *e = BN_new();
   BN_dec2bn(&e, "65537");
 
-  seedMT(seed);
-  printf("\nSeed: \n%08X\n", seed);
-
-  seed = seed + 2;
-  for (j = 0; j < 64; j++)
+  int done = 0;
+  while (!done)
   {
-    if (j == 63)
+    left = -1;
+    int j = 0;
+    uint32_t current_seed = 0;
     {
-      // The last int has the high bytes replaced with 0200, presumably to force the number to be within bounds for exponentiation/encryption.
-      rand_data[j] = bswap32(bswap32(randomMT() & 0xFFFF) + 0x0200);
+      current_seed = seed;
+      seed = seed + 2;
     }
-    else
-    {
-      rand_data[j] = randomMT();
-    }
-  }
 
-  printf("\nKeyData: \n");
-  unsigned char *rand_data_bytes = (unsigned char *)rand_data;
-  for (j = 0; j < 256; j++)
-  {
-    printf(" %02X%s", rand_data_bytes[j], (j % 4) == 4 ? " " : "");
-  }
-  // This byte is just straight up set to 0, at 800167d4 in SBOOT, who knows why...
-  rand_data_bytes[245] = 0;
-  BIGNUM *data_num = BN_lebin2bn(rand_data_bytes, 256, NULL);
-  BIGNUM *out = BN_new();
-  BN_mod_exp(out, data_num, e, n, ctx);
-  unsigned char rsa_output[256];
-  BN_bn2binpad(out, rsa_output, 256);
-  printf("\nCryptedData: \n");
-  for (j = 0; j < 256; j++)
-  {
-    printf(" %02X%s", rsa_output[j], (j % 4) == 4 ? " " : "");
+    seedMT(current_seed);
+    uint32_t rand_data[64];
+    unsigned char *rand_data_bytes = (unsigned char *)rand_data;
+    for (j = 0; j < 64; j++)
+    {
+      if (j == 63)
+      {
+        // The last int has the high bytes replaced with 0200, presumably to force the number to be within bounds for exponentiation/encryption.
+        rand_data[j] = bswap32(bswap32(randomMT() & 0xFFFF) + 0x0200);
+      }
+      else
+      {
+        rand_data[j] = randomMT();
+      }
+    }
+    // This byte is just straight up set to 0, at 800167d4 in SBOOT, who knows why...
+    rand_data_bytes[245] = 0;
+
+    BIGNUM *data_num = BN_lebin2bn(rand_data_bytes, 256, NULL);
+    BIGNUM *out = BN_new();
+    BN_CTX *ctx = BN_CTX_new();
+    BN_mod_exp(out, data_num, e, n, ctx);
+    unsigned char rsa_output[256];
+    BN_bn2lebinpad(out, rsa_output, 256);
+
+    uint32_t *rsa_output_ints = (uint32_t *)rsa_output;
+    if (rsa_output_ints[0] == match)
+    {
+      done = 1;
+      printf("**** FOUND ****\n");
+      printf("Seed: %08X\n", current_seed);
+      printf("\nKey Data: \n");
+      for (j = 0; j < 64; j++)
+      {
+        printf(" %08X%s", rand_data[j], (j % 4) == 4 ? " " : "");
+      }
+      printf("\nSeed Data: \n");
+      for (j = 0; j < 64; j++)
+      {
+        printf(" %08X%s", rsa_output_ints[j], (j % 4) == 4 ? " " : "");
+      }
+      printf("\n");
+    }
   }
 
   return (EXIT_SUCCESS);

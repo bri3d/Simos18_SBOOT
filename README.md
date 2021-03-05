@@ -170,7 +170,16 @@ f4ec5c4e
 ```
 Here, we upload a small fake code block to the SBOOT command shell, consisting of a CRC header telling the shell to begin CRC checking at a specified address, 0x8001420C, and some fixed part number data necessary to pass a validator. Next, we read back the CRC and end address (to make sure only a single iteration of the CRC algorithm was allowed to progress). Now we have the CRC value for 0x8001421C-0x8001431C! An astute reader will note that this range is actually after the boot passwords and contains some crypto data from OTP (the Mersenne Twister seed and the beginning of the AES K-values, I think) - this lets us verify that our system is working, since we can checksum the known data and compare the result.
 
+```
+crchack % ./crchack -x 00000000 -i 00000000 -w 32 -p 0x4c11db7 ../Simos-Crypto/21C.bin
+4e5cecf4
+```
+
 To actually recover passwords, we need to repeat this process, sliding the checksum value backwards 4 bytes at a time. Each time we slide the checksum value backwards, we can use https://github.com/resilar/crchack to generate the necessary data to match the checksum. By performing this process iteratively back to the boot passwords at 0x8001420C, we can infer their value.
+
+```
+crchack % ./crchack -x 00000000 -i 00000000 -w 32 -p 0x4c11db7 -b :4 ../Simos-Crypto/218.bin 0x4F2527F4 > 218.WRITE_PASSWORD_2.bin
+```
 
 # Happy Path
 

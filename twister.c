@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <openssl/rsa.h>
+#include <gmp.h>
 
 // This is the ``Mersenne Twister'' random number generator MT19937
 // http://www.math.keio.ac.jp/~matumoto/ver980409.html
@@ -67,11 +67,10 @@ int main(int argc, char *argv[])
   uint32_t seed = strtol(argv[1], NULL, 16);
   uint64_t match = strtoll(argv[2], NULL, 16);
 
-  // RSA Public Key 0x136 from Supplier Bootloader binary
-  BIGNUM *n = BN_new();
-  BN_hex2bn(&n, "de5a5615fdda3b76b4ecd8754228885e7bf11fdd6c8c18ac24230f7f770006cfe60465384e6a5ab4daa3009abc65bff2abb1da1428ce7a925366a14833dcd18183bad61b2c66f0d8b9c4c90bf27fe9d1c55bf2830306a13d4559df60783f5809547ffd364dbccea7a7c2fc32a0357ceba3e932abcac6bd6398894a1a22f63bdc45b5da8b3c4e80f8c097ca7ffd18ff6c78c81e94c016c080ee6c5322e1aeb59d2123dce1e4dd20d0f1cdb017326b4fd813c060e8d2acd62e703341784dca667632233de57db820f149964b3f4f0c785c39e2534a7ae36fd115b9f06457822f8a9b7ce7533777a4fb03610d6b4018ab332be4e7ad2f4ac193040e5a037417bc53");
-  BIGNUM *e = BN_new();
-  BN_dec2bn(&e, "65537");
+  mpz_t n;
+  mpz_init_set_str(n, "de5a5615fdda3b76b4ecd8754228885e7bf11fdd6c8c18ac24230f7f770006cfe60465384e6a5ab4daa3009abc65bff2abb1da1428ce7a925366a14833dcd18183bad61b2c66f0d8b9c4c90bf27fe9d1c55bf2830306a13d4559df60783f5809547ffd364dbccea7a7c2fc32a0357ceba3e932abcac6bd6398894a1a22f63bdc45b5da8b3c4e80f8c097ca7ffd18ff6c78c81e94c016c080ee6c5322e1aeb59d2123dce1e4dd20d0f1cdb017326b4fd813c060e8d2acd62e703341784dca667632233de57db820f149964b3f4f0c785c39e2534a7ae36fd115b9f06457822f8a9b7ce7533777a4fb03610d6b4018ab332be4e7ad2f4ac193040e5a037417bc53", 16);
+  mpz_t e;
+  mpz_init_set_ui(e, 65537U);
 
   int done = 0;
 #pragma omp parallel shared(seed, done, match)
@@ -94,12 +93,20 @@ int main(int argc, char *argv[])
     // This byte is just straight up set to 0, at 800167d4 in SBOOT, who knows why...
     rand_data_bytes[245] = 0;
 
-    BIGNUM *data_num = BN_lebin2bn(rand_data_bytes, 256, NULL);
-    BIGNUM *out = BN_new();
-    BN_CTX *ctx = BN_CTX_new();
-    BN_mod_exp(out, data_num, e, n, ctx);
+    mpz_t data_num;
+    mpz_init(data_num);
+    mpz_import(data_num, 64, -1, 4, -1, 0, rand_data_bytes);
+    mpz_t output;
+    mpz_init(output);
+    //BIGNUM *data_num = BN_lebin2bn(rand_data_bytes, 256, NULL);
+    //BIGNUM *out = BN_new();
+    //BN_CTX *ctx = BN_CTX_new();
+    mpz_powm(output, data_num, e, n);
     unsigned char rsa_output[256];
-    BN_bn2lebinpad(out, rsa_output, 256);
+
+    mpz_export(rsa_output, NULL, -1, 4, -1, 0, output);
+    //BN_mod_exp(out, data_num, e, n, ctx);
+    //BN_bn2lebinpad(out, rsa_output, 256);
 
     uint32_t *rsa_output_ints = (uint32_t *)rsa_output;
     if (rsa_output_ints[0] == match)

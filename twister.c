@@ -1,3 +1,4 @@
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -98,15 +99,9 @@ int main(int argc, char *argv[])
     mpz_import(data_num, 64, -1, 4, -1, 0, rand_data_bytes);
     mpz_t output;
     mpz_init(output);
-    //BIGNUM *data_num = BN_lebin2bn(rand_data_bytes, 256, NULL);
-    //BIGNUM *out = BN_new();
-    //BN_CTX *ctx = BN_CTX_new();
     mpz_powm(output, data_num, e, n);
     unsigned char rsa_output[256];
-
     mpz_export(rsa_output, NULL, -1, 4, -1, 0, output);
-    //BN_mod_exp(out, data_num, e, n, ctx);
-    //BN_bn2lebinpad(out, rsa_output, 256);
 
     uint32_t *rsa_output_ints = (uint32_t *)rsa_output;
     if (rsa_output_ints[0] == match)

@@ -74,15 +74,16 @@ int main(int argc, char *argv[])
   mpz_init_set_ui(e, 65537U);
 
   int done = 0;
-#pragma omp parallel shared(seed, done, match)
+#pragma omp parallel shared(seed, done, match, n, e)
   while (!done)
   {
     int j = 0;
     uint32_t current_seed = 0;
-#pragma omp atomic read
-    current_seed = seed;
-#pragma omp atomic
-    seed = seed + 2;
+#pragma omp atomic capture
+    {
+      current_seed = seed;
+      seed = seed + 2;
+    }
 
     uint32_t rand_data[64];
     seedMT(current_seed, rand_data);

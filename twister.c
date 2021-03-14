@@ -65,8 +65,17 @@ static inline uint32_t bswap32(uint32_t x)
 
 int main(int argc, char *argv[])
 {
+  if (argc < 3)
+  {
+    return 1;
+  }
   uint32_t seed = strtol(argv[1], NULL, 16);
   uint64_t match = strtoll(argv[2], NULL, 16);
+  int suppress_output = 0;
+  if (argc > 3)
+  {
+    suppress_output = 1;
+  }
 
   mpz_t n;
   mpz_init_set_str(n, "de5a5615fdda3b76b4ecd8754228885e7bf11fdd6c8c18ac24230f7f770006cfe60465384e6a5ab4daa3009abc65bff2abb1da1428ce7a925366a14833dcd18183bad61b2c66f0d8b9c4c90bf27fe9d1c55bf2830306a13d4559df60783f5809547ffd364dbccea7a7c2fc32a0357ceba3e932abcac6bd6398894a1a22f63bdc45b5da8b3c4e80f8c097ca7ffd18ff6c78c81e94c016c080ee6c5322e1aeb59d2123dce1e4dd20d0f1cdb017326b4fd813c060e8d2acd62e703341784dca667632233de57db820f149964b3f4f0c785c39e2534a7ae36fd115b9f06457822f8a9b7ce7533777a4fb03610d6b4018ab332be4e7ad2f4ac193040e5a037417bc53", 16);
@@ -74,7 +83,7 @@ int main(int argc, char *argv[])
   mpz_init_set_ui(e, 65537U);
 
   int done = 0;
-#pragma omp parallel shared(seed, done, match, n, e)
+#pragma omp parallel shared(seed, done, match, n, e, suppress_output)
   while (!done)
   {
     int j = 0;
@@ -108,19 +117,26 @@ int main(int argc, char *argv[])
     if (rsa_output_ints[0] == match)
     {
       done = 1;
-      printf("**** FOUND ****\n");
-      printf("Seed: %08X\n", current_seed);
-      printf("\nKey Data: \n");
+      if (!suppress_output)
+      {
+        printf("**** FOUND ****\n");
+        printf("Seed: %08X\n", current_seed);
+        printf("\nKey Data: \n");
+      }
       for (j = 0; j < 64; j++)
       {
-        printf(" %08X%s", rand_data[j], (j % 4) == 4 ? " " : "");
+        printf("%08X", rand_data[j]);
       }
-      printf("\nSeed Data: \n");
-      for (j = 0; j < 64; j++)
+      if (!suppress_output)
       {
-        printf(" %08X%s", rsa_output_ints[j], (j % 4) == 4 ? " " : "");
+
+        printf("\nSeed Data: \n");
+        for (j = 0; j < 64; j++)
+        {
+          printf(" %08X%s", rsa_output_ints[j], (j % 4) == 4 ? " " : "");
+        }
+        printf("\n");
       }
-      printf("\n");
     }
   }
 

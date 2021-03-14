@@ -149,7 +149,7 @@ Sending 0x65 Security Access with Key...
 Success
 ```
 
-There's the Seed data, produced by encrypting unknown Key data generated using the Mersenne Twister PRNG. This was recovered back into Key data by brute-forcing Seed values until we found a match. The timing is controlled enough that the timer value should be somewhere around 01D00000. If this value is incorrect for your setup, it could take a long time or be impossible to find a match. In this case I recommend running `twister` on faster hardware with the starting value set to `0`, to see what the correct "start" value for your hardware is.
+There's the Seed data, produced by encrypting unknown Key data generated using the Mersenne Twister PRNG. This was recovered back into Key data by brute-forcing Seed values until we found a match. The timing is controlled enough that the timer value should be somewhere around 01D00000. If this value is incorrect for your setup, it could take a long time or be impossible to find a match (it should take 10-15 seconds tops). In this case I recommend running `twister` on faster hardware with the starting value set to `0`, to see what the correct "start" value for your hardware is:
 
 ```
 Simos18_SBOOT % ./twister 00000000 be284541
@@ -162,7 +162,9 @@ Seed Data:
  BE284541 338A69A6 BF21CAA3 69D3079A 815F9D5C 71359E92 2495BC27 DBE86E6E 441702D8 1E07CA31 8A98B2E3 F83BED6F 7E91F3CE 375A9703 013284E8 DE83343D E688D33F 5E8D4BF2 5F9CAE3B 191A8167 43C32A59 67414C24 9658E421 EA040B5D F7B30B9E 69C0A647 6653F729 DB1C7567 5CE71C09 04BE57A6 94C43E24 3468118B A8CDC1E4 B6C23A73 C115EEDE 9950051A 239D9759 8707779E 14C8EC45 84E2A9E1 55CADFC8 D526D778 66047070 B13D3405 7CF311B9 FA6D9FF5 223026FD AA4B7223 96C57B78 58BC290E 4320D80C 4C1B31DC D1E02CB5 E2EC7B4A 1AA18FB7 68A10342 328AD5C5 E042A8CD FEBA7607 161308AE ABC71C89 A819AE6A 43A2FA3B 4CF45E49
  ```
  
-Here, we use `twister` from this repo to generate the Seed/Key data. The two parameters are 00000000, the initial timer value to iterate up from, and BE284541, the first 32 bits of the Seed from the above commands. Again if your tester has different timings (I used a Raspberry Pi 3B+), you may need to increase or decrease the 01D00000 value to find a match in a reasonable amount of time. The faster the machine you can run `twister` on. It's multithreaded and grossly parallel with OpenMP, so if you find a big enough machine you could iterate the whole keyspace in a manner of minutes. 
+Here, we use `twister` from this repo manually to generate the Seed/Key data. Again, this is only necessary if the automated process above took too long (it should take ~10 seconds on a Pi 3B+). 
+
+The two parameters are 00000000, the initial timer value to iterate up from, and BE284541, the first 32 bits of the Seed from the above commands. Again, this is only necessary if your tester has different timings from mine (I used a Raspberry Pi 3B+), in which case you may need to increase or decrease the 01D00000 value in `bootloader.py` to find a match in a reasonable amount of time. The faster the machine you can run `twister` on for this process, the better. It's multithreaded and grossly parallel with OpenMP, so if you find a big enough machine you could iterate the whole keyspace in a manner of minutes. It takes about a minute to iterate up from 0 to 01D1E4EE on my M1 MacBook Air. Once you have found one Seed/Key pair this way, you can put a number close to the `Seed` int back into the `bootloader.py` script to speed things up.
 
 Now, we go back to the `bootstrap.py` script.
 

@@ -123,6 +123,8 @@ The SBOOT entry process is much more reliable when starting from the Bootstrap L
 
 Next:
 
+# Manual Process
+
 ```
 (BSL) sboot
 Setting up PWM waveforms...
@@ -214,3 +216,25 @@ crchack % ./crchack -x 00000000 -i 00000000 -w 32 -p 0x4c11db7 -b :4 ../Simos-Cr
 ```
 
 The data at 80014200-8001420C is also known - it's the unique ID of the MCU, which is available as the output of the "deviceid" command in this BSL shell. So, I believe you could also complete this attack by sliding the CRC region forward rather than backwards using that known data rather than the data out of an SBOOT ROM dump.
+
+# Automatic Process Example
+
+```
+$ python3 bootloader.py 
+Welcome to Tricore BSL. Type help or ? to list commands, you are likely looking for upload to start.
+
+(BSL) extract_boot_passwords
+[... , device will start 4 times to find 4 CRC values, should take ~2 minutes]
+CRC32 Current Value: 
+0xf427254f
+80014218 - 0x80014318 -> 0xf427254f
+abf425508513c27314e31d3542b92b1b
+(BSL) send_read_passwords abf42550 8513c273
+(BSL) dumpmem AF000000 18000 PMU0_DFlash.bin
+(BSL) dumpmem AF080000 18000 PMU1_Dflash.bin
+(BSL) dumpmem 80000000 200000 PMU0_PFlash.bin
+(BSL) dumpmem 80800000 100000 PMU1_PFlash.bin
+
+```
+
+If everything works (I recommend testing a single iteration using the step-by-step instructions above), the `crchack` and reset process has now been automated to dump boot passwords with a single command - the last line of output is the passwords. This relies on the seed start-value being valid for your setup (see above around `twister`) and everything being connected properly. The four example `dumpmem` commands will "back up" your ECU and produce a "bench read" - the PMU PFlash and DFlash. You *cannot* currently use these to clone from ECU to ECU - the OTP area at 80014000 is married to the PMU ID and boot passwords, and the DFlash is encrypted using the PMU ID as part of the initialization material.

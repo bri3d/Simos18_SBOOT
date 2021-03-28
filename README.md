@@ -100,7 +100,7 @@ Clone this repository and https://github.com/bri3d/TC1791_CAN_BSL into sibling d
 
 Install OpenMP (Optional, if installed and compiled twister will be multicore) and GNU MP (gmp, Required) as well as their development headers.
 
-Compile `twister.c` using something like `gcc twister.c -o twister -O3 -march=native -mtune=native -mcpu=native -Xpreprocessor -fopenmp -lgomp` .
+Compile `twister.c` using something like `gcc twister.c -o twister -O3 -march=native -mtune=native -mcpu=native -Xpreprocessor -fopenmp -lgomp -lgmp` .
 
 Set up ECU for Bootstrap Loader using https://github.com/bri3d/TC1791_CAN_BSL as a guide. Unfortunately, you will need to open the ECU and probe or solder to several very small vias. This is necessary to allow the use of the CPU RST pin, as well as the upload of a low-level Tricore Bootstrap Loader to read the CRC data out of RAM and access Flash once passwords are recovered.
 

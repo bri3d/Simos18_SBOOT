@@ -78,7 +78,7 @@ int main(int argc, char *argv[])
   }
 
   mpz_t n;
-  mpz_init_set_str(n, "dbce4ddc55de40041ec51b0f5d37d45b2a0468f5ed1f5cd67259e294f8bfee453771663b94df7376a872194eb48c1b24d8a47f605297beafb5c36612c895f34f96ae4fdea3ccc653ca35d9bcbb2b60329ad70d5fea8e05e13ea088807ab0cc9fbb45fc67d9af69d8ac2a8279be3d69b9314130e86c821fc1d66c2bde8c29e98f", 16);
+  mpz_init_set_str(n, "c18ca0cfd924257f0f42ddae1871c42e93fcb04cb5a975bb1f320f18ad8846487c1aa961a72c456555d346f660ea27318053b78f1066870a1938c897bf24cd36a2fef7cd8bc096b32f52a89be8dccfa89351ee0351f664ea2169a9b96488997db58036fa650be0e3c66bb2ec4dfe74f0eb22842cc98e7a1974865ca72d3730e5", 16);
   mpz_t e;
   mpz_init_set_ui(e, 65537U);
 
@@ -114,20 +114,6 @@ int main(int argc, char *argv[])
     mpz_export(rsa_output, NULL, -1, 4, -1, 0, output);
 
     uint32_t *rsa_output_ints = (uint32_t *)rsa_output;
-
-      printf("\nKey Data: \n");
-      
-      for (j = 0; j < 32; j++)
-      {
-        printf("%08X", rand_data[j]);
-      }
-      
-        printf("\nSeed Data: \n");
-        for (j = 0; j < 32; j++)
-        {
-          printf(" %08X%s", rsa_output_ints[j], (j % 4) == 4 ? " " : "");
-        }
-        printf("\n");
 
     if (rsa_output_ints[0] == match)
     {

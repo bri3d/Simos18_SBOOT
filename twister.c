@@ -112,6 +112,8 @@ int main(int argc, char *argv[])
     mpz_powm(output, data_num, e, n);
     unsigned char rsa_output[256];
     mpz_export(rsa_output, NULL, -1, 4, -1, 0, output);
+    mpz_clear(output);
+    mpz_clear(data_num);
 
     uint32_t *rsa_output_ints = (uint32_t *)rsa_output;
     if (rsa_output_ints[0] == match)
@@ -139,6 +141,8 @@ int main(int argc, char *argv[])
       }
     }
   }
+  mpz_clear(e);
+  mpz_clear(n);
 
   return (EXIT_SUCCESS);
 }

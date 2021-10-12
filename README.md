@@ -4,6 +4,48 @@ This project provides documentation about the Supplier Bootloader (SBOOT) provid
 
 For more background about Simos18 in general and the later-stage (Customer Bootloader/CBOOT) exploit used for unsigned code execution, please see [my other documentation](https://github.com/bri3d/VW_Flash/blob/master/docs.md).
 
+# High Level Summary
+
+A bit of background: All ECUs based on Infineon Tricore MCUs are protected, fundamentally, by a simple mechanism: the Flash memory is inside of the processor module itself, and the processor's Flash controller protects the memory from Read and Write using passwords stored inside of User Configuration Blocks in the CPU.
+Tricore CPUs do allow the user to run arbitrary code natively, using a set of hardware pins which configure the CPU to load a Bootstrap Loader (BSL) over the CAN bus. However, an attacker or tuner cannot read or write the Flash memory without either an exploit for the factory flashing process, or access to these passwords, because when the Bootstrap Loader starts, Flash is locked using these passwords. In older Tricore based ECUs, these passwords were fixed or generated algorithmically, but in modern ECUs like Simos18, manufacturers wised up and the passwords are generated randomly and burned into a One Time Programmed area during end-of-line manufacturing. So, there's a chicken-and-egg problem: an attacker needs to read Flash to get the passwords back out, but they can't read Flash without the passwords...
+
+So, the attack that needs to be found is a read primitive for an arbitrary part of Flash memory.
+
+On Simos18 for VW AG, there is a simple exploit for the factory flashing process which allows arbitrary write access to Flash memory and therefore arbitrary code execution, so this password access is not as important for tuning - but, there are still some reasons to want it: the factory flashing process won't work if the ECU's immobilizer is active, including if you bought a junkyard ECU to play with or to repair your own car with. The factory flashing exploit also won't work if you bricked the car using a bad software patch, or shot yourself in the foot by installing software for the wrong vehicle. So, having the passwords is still useful.
+
+Most modern ECUs have what's called SBOOT: a Supplier Bootloader which is provided by the ECU manufacturer (i.e. Continental). This Supplier Bootloader is used to write ECUs during the manufacturing process, and to inspect and un-brick ECUs sent into a manufacturer for repair.
+This kind of low-level access differs almost entirely between manufacturers - for example, from what I know, Bosch use standard protocols like UDS and CCP, while Continental have a custom command-set on top of ISO-TP.
+
+Anyway, here is how the exploit process works.
+
+First, the Simos18 boot process needs to be interrupted so it arrives in SBOOT, rather than loading up CBOOT (Customer Bootloader) and then the normal ASW (Application Software) to run the car. This is done the same way it is on ECUs from other manufacturers: by sending a custom PWM waveform to two pins on the ECU harness, which the ECU measures at boot time using the GPTA logic analyzer built into the Tricore procesor. In Simos18, this is accomplished by expecting a 235.2uS Pin1 -> Pin 2 timing measurement and a 312uS Pin 2 -> Pin 2 timing measurement, meaning two 3.2Khz signals phase-shifted 1/4 from each other.
+
+If these two signals are present, the ECU knows it's time to go into the Supplier Bootloader. Next, the ECU expects some CAN messages on the normal Powertrain CAN pins to tell it it REALLY is time to go into SBOOT, and then it loads up the SBOOT command processor and an ISO-TP stack.
+
+Next, the SBOOT command processor expects some custom commands sent over ISO-TP, which ideally are used to upload a manufacturer-provided custom bootloader. Where things really get interesting is that there's a Seed/Key process before any extended access is allowed to the command processor.
+The Seed/Key process looks secure on the surface. The ECU sends 256 bytes of psuedo-random (Mersenne Twister) data encrypted using an RSA public key (M ^ E mod N) to the client and expects the client to send the decrypted data back. Given how RSA works, this SHOULD require the private key, but there is a fatal mistake:
+The ECU does not seed the Seed/Key process with real OR enough entropy (randomness). There are two mistakes: the random number generator is seeded with the system timer, which is not a source of entropy because it behaves predictably, and the random number generator is only seeded with 31 bits (231 possible values) worth of data, which can easily be calculated on a modern processor in seconds to minutes.
+
+This process could be exploited by carefully controlling the timing of the Seed message to always cause the same message to be sent (there is a countermeasure against this, where Seed isn't accepted until the ECU has been running for a few hundred ms, but it's a weak countermeasure because it's still a fixed time value). Or it could be exploited by generating a huge rainbow table of all possible values. But the easiest way to exploit it is a combination: to send the Seed message at a predictable time, and then brute-force over a small keyspace until we find a Key message which encrypts to match the Seed. https://github.com/bri3d/Simos18_SBOOT/blob/main/twister.c
+
+Now that we are past the Seed/Key process and the PWM access process, we need an arbitrary read exploit. The SBOOT command shell is designed to allow a manufacturer provided code block to be uploaded into RAM and executed, but, that code block is signed with the same RSA validation process used by all Simos18 code blocks (the block data is mixed with address headers to prevent relocation attacks, and then SHA-256 checksummed, and then the SHA-256 is encoded into a standard PKCS#1 RSA signature which is attached to the block). This process is secure as far as I can tell and nobody has exploited it. So we can't gain arbitrary code execution with a valid block. But, we just need a read primitive, and it turns out there is one:
+
+In addition to the RSA signature, all Simos18 code blocks are also checked against a simple CRC checksum. And, in this case, SBOOT tries to validate the CRC checksum before it validates the RSA signature. It turns out the CRC validation is performed using an address header, and the address header has weak bounds checking. So, we can ask the ECU to checksum the boot passwords, and send us the checksum back. Since CRC is not a cryptographic hash (it is reversible), we can use the CRC values to back-calculate the boot passwords. Unfortunately, we can't do this cleanly, because the high side of the address range IS correctly bounds-checked. So instead, we have to start the CRC checksum process, then rapidly reboot into the Tricore Bootstrap Loader and dump the contents of RAM, to see the intermediate/temporary CRC values that have been calculated for only the boot passwords. https://github.com/bri3d/TC1791_CAN_BSL/blob/main/bootloader.py#L113
+
+I know this write-up was long, but I hope this helps readers gain a deeper knowledge of the kinds of exploit chains which are present in semi-modern ECUs. At a base level, this isn't too different from the kinds of protection and exploits used in mobile devices and game consoles. I hope that by sharing this exploit chain (PWM timer -> Seed/Key timing and bruteforce -> CRC bounds-checking Reset/RGH exploit), I can help those getting into ECUs from another kind of device to recognize the similarities and gain interest in ECU reverse engineering.
+
+As for my process: I loaded up SBOOT in Ghidra using a register map I built using available TriCore toolchain information: https://github.com/bri3d/ghidra_tc1791_registers . Then I literally just, well, read the code. The GPT timing comparisons were easy to find from access to the GPTA registers, but it took a long time to realize the base frequency the PLLs were locked at (8.75Mhz) to translate the cycle-timing back into real timing.
+
+Then, the Seed/Key process was trivial to figure out (Mersenne Twister is full of constants which are easy to Google, and the cryptography routines are in a separate library inside the same binary so it is easy to tell what's going on), but looked so secure in concept that it took some time to recognize the weak seed data.
+
+Next, I had to very carefully replicate the process used to encrypt the Seed data, which had a few weird nuances (one byte is just set to 0 for seemingly no reason). I ran the binary through Tricore emulated in QEMU, which helped a lot since I could dump RAM and inspect the state of various buffers quickly, although I could have done the same using a Bootstrap Loader.
+
+After the Seed/Key process was figured out, the CRC exploit was very obvious as the bounds checking is blatantly broken. https://github.com/resilar/crchack came in handy to take the CRC + unknown data and back-generate the correct data used to produce the CRC.
+
+I wish I could share my annotated disassembly for the greater good, but sharing manufacturer binaries is unfortunately not a great idea, so I will have to live with this description.
+
+# Detailed Documentation
+
 The SBOOT is the first part of the ECU's trust chain after the CPU mask ROM. It starts at 0x80000000 (the beginning of Program Memory) and has a few basic responsibilities:
 
 * Early-stage startup of the Tricore CPU's peripherals and clock initialization and re-sync.
